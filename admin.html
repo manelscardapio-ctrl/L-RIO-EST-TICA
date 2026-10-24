@@ -12,7 +12,7 @@ nav button.on{outline:2px solid #222}small{color:#666}
 </style></head><body><main id="app"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script>
-const SUPABASE_URL='COLE_AQUI_A_URL', SUPABASE_KEY='COLE_AQUI_A_ANON_KEY';
+const SUPABASE_URL='https://rolktniycdayacfnolgs.supabase.co', SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJvbGt0bml5Y2RheWFjZm5vbGdzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI4NzYxOTYsImV4cCI6MjEwODQ1MjE5Nn0.VghfS6uowqYgvHSsuN9Cy6euxFTNqpwHgJpyfS0cE8A';
 const db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 const $=s=>document.querySelector(s), A=$('#app'), D={};
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
