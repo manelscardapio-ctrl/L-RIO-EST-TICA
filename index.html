@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lírio Estética</title>
+<style>
+body{font-family:system-ui,sans-serif;margin:0;background:#faf7f5;color:#222}
+main{max-width:720px;margin:auto;padding:16px}
+.card{background:#fff;border:1px solid #e5ddd8;border-radius:10px;padding:12px;margin:8px 0}
+button{padding:8px 14px;border:0;border-radius:8px;background:#7a4b5e;color:#fff;cursor:pointer;margin:2px}
+button.alt{background:#eee;color:#222}.sel{outline:2px solid #7a4b5e}
+input,textarea{width:100%;padding:8px;margin:4px 0;box-sizing:border-box}
+.p{float:right;font-weight:bold}small{color:#666}
+</style></head><body><main>
+<h1 id="nome">Lírio Estética</h1><p id="sub"></p><p id="boas"></p>
+<h2>1. Serviço</h2><div id="sv">Carregando...</div>
+<div id="s2" hidden><h2>2. Profissional</h2><div id="pf"></div></div>
+<div id="s3" hidden><h2>3. Data e horário</h2><div id="dt"></div><div id="hr"></div></div>
+<div id="s4" hidden><h2>4. Seus dados</h2>
+<input id="n" placeholder="Seu nome" maxlength="80"><input id="t" placeholder="WhatsApp com DDD" maxlength="20" type="tel">
+<textarea id="o" placeholder="Observações (opcional)" maxlength="500"></textarea>
+<button onclick="enviar()">Confirmar agendamento</button></div>
+<div id="ok" class="card" hidden></div>
+<p><small id="info"></small></p>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script>
+const SUPABASE_URL='COLE_AQUI_A_URL', SUPABASE_KEY='COLE_AQUI_A_ANON_KEY';
+const db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+const $=i=>document.getElementById(i), S={}, H=[];
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const brl=v=>Number(v).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+const show=i=>$(i).hidden=false;
+const sel=(box,el)=>{[...$(box).children].forEach(c=>c.classList.remove('sel'));el.classList.add('sel')};
+
+async function init(){
+ const [c,sv,pf]=await Promise.all([
+  db.from('configuracoes').select('*').eq('id',1).single(),
+  db.from('servicos').select('*').eq('ativo',true).order('nome'),
+  db.from('profissionais').select('*').eq('ativo',true).order('nome')]);
+ const k=c.data||{}; S.cfg=k;
+ document.title=k.nome||'Lírio Estética';
+ $('nome').textContent=k.nome||''; $('sub').textContent=k.subtitulo||''; $('boas').textContent=k.boas_vindas||'';
+ $('info').textContent=[k.endereco,k.aviso].filter(Boolean).join(' • ');
+ S.pf=pf.data||[];
+ $('sv').innerHTML=(sv.data||[]).map(s=>`<div class="card" style="cursor:pointer" onclick='pickSv(${JSON.stringify(s).replace(/'/g,"&#39;")},this)'>
+  <span class="p">${brl(s.preco)}</span><b>${esc(s.nome)}</b><br><small>${esc(s.descricao)} ${s.duracao_min?'• '+s.duracao_min+' min':''}</small></div>`).join('')||'Nenhum serviço disponível.';
+}
+function pickSv(s,el){S.sv=s;sel('sv',el);
+ $('pf').innerHTML=S.pf.map(p=>`<button class="alt" onclick="pickPf('${p.id}',this)">${esc(p.nome)}${p.especialidade?' <small>('+esc(p.especialidade)+')</small>':''}</button>`).join('')||'Sem profissionais.';
+ show('s2');}
+async function pickPf(id,el){S.pid=id;sel('pf',el);
+ const hoje=new Date().toLocaleDateString('sv');
+ const {data}=await db.from('horarios').select('*').eq('profissional_id',id).eq('status','livre').gte('data',hoje).order('data').order('hora');
+ const agora=new Date().toTimeString().slice(0,5);
+ H.length=0;(data||[]).filter(h=>h.data>hoje||h.hora.slice(0,5)>agora).forEach(h=>H.push(h));
+ const dias=[...new Set(H.map(h=>h.data))];
+ $('dt').innerHTML=dias.map(d=>`<button class="alt" onclick="pickDia('${d}',this)">${new Date(d+'T12:00').toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit'})}</button>`).join('')||'Sem horários livres no momento.';
+ $('hr').innerHTML='';$('s4').hidden=true;show('s3');}
+function pickDia(d,el){sel('dt',el);S.hid=null;$('s4').hidden=true;
+ $('hr').innerHTML=H.filter(h=>h.data==d).map(h=>`<button class="alt" onclick="pickHr('${h.id}',this)">${h.hora.slice(0,5)}</button>`).join('');}
+function pickHr(id,el){S.hid=id;sel('hr',el);show('s4');}
+async function enviar(){
+ if(!S.sv||!S.hid)return alert('Escolha serviço e horário.');
+ const {error}=await db.rpc('agendar',{p_horario:S.hid,p_servico:S.sv.id,p_nome:$('n').value,p_tel:$('t').value,p_obs:$('o').value});
+ if(error)return alert(error.message.includes('indispon')?'Esse horário acabou de ser reservado. Escolha outro.':'Erro: '+error.message);
+ ['s2','s3','s4'].forEach(i=>$(i).hidden=true);
+ const w=(S.cfg.whatsapp||'').replace(/\D/g,'');
+ $('ok').innerHTML=`<b>Agendamento solicitado!</b><br>Aguarde a confirmação da clínica.`+(w?`<br><a href="https://wa.me/${w}">Falar no WhatsApp</a>`:'');
+ show('ok');}
+init();
+</script></body></html>

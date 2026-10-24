@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex"><title>Admin — Lírio Estética</title>
+<style>
+body{font-family:system-ui,sans-serif;margin:0;background:#f4f1ef;color:#222}
+main{max-width:900px;margin:auto;padding:12px}
+.card{background:#fff;border:1px solid #ddd;border-radius:10px;padding:10px;margin:8px 0}
+button{padding:7px 12px;border:0;border-radius:8px;background:#7a4b5e;color:#fff;cursor:pointer;margin:2px}
+button.alt{background:#ddd;color:#222}
+input,select,textarea{padding:7px;margin:3px;box-sizing:border-box;max-width:100%}
+nav button.on{outline:2px solid #222}small{color:#666}
+</style></head><body><main id="app"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script>
+const SUPABASE_URL='COLE_AQUI_A_URL', SUPABASE_KEY='COLE_AQUI_A_ANON_KEY';
+const db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+const $=s=>document.querySelector(s), A=$('#app'), D={};
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const brl=v=>Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+const fd=d=>new Date(d+'T12:00').toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit'});
+const opt=(l,k='nome')=>l.map(x=>`<option value="${x.id}">${esc(x[k])}</option>`).join('');
+let tab='agenda';
+const T={agenda,horarios,servicos,equipe,novo,config};
+const NAMES={agenda:'Agenda',horarios:'Horários',servicos:'Serviços',equipe:'Equipe',novo:'Novo agendamento',config:'Site'};
+
+(async()=>{const{data:{session}}=await db.auth.getSession();session?shell():login()})();
+function login(){A.innerHTML=`<div class=card><h2>Admin Lírio Estética</h2><input id=em placeholder=E-mail><input id=pw type=password placeholder=Senha><button onclick=entrar()>Entrar</button> <span id=msg></span></div>`}
+async function entrar(){const{error}=await db.auth.signInWithPassword({email:$('#em').value,password:$('#pw').value});error?$('#msg').textContent=error.message:shell()}
+function shell(){A.innerHTML=`<nav>${Object.keys(T).map(k=>`<button class="alt" onclick="tab='${k}';go()">${NAMES[k]}</button>`).join('')}<button onclick="db.auth.signOut().then(login)">Sair</button></nav><div id=c></div>`;go()}
+const go=()=>T[tab]();
+async function load(){D.sv=(await db.from('servicos').select('*').order('nome')).data||[];D.pf=(await db.from('profissionais').select('*').order('nome')).data||[]}
+
+// ---------- AGENDA ----------
+async function agenda(){
+ const fs=$('#fs')?.value||'';
+ const{data,error}=await db.from('agendamentos').select('*,horarios(data,hora,profissionais(nome)),servicos(nome,preco)');
+ if(error)return $('#c').innerHTML=error.message;
+ const l=(data||[]).filter(a=>!fs||a.status==fs).sort((a,b)=>((b.horarios?.data||'')+(b.horarios?.hora||'')).localeCompare((a.horarios?.data||'')+(a.horarios?.hora||'')));
+ $('#c').innerHTML=`<h3>Agendamentos</h3><select id=fs onchange=agenda()><option value="">Todos</option>${['pendente','confirmado','concluido','cancelado'].map(s=>`<option ${s==fs?'selected':''}>${s}</option>`).join('')}</select>`+
+ l.map(a=>{const h=a.horarios,tel=a.cliente_telefone.replace(/\D/g,'');return `<div class=card><b>${esc(a.cliente_nome)}</b> — ${esc(a.servicos?.nome||'?')} ${brl(a.servicos?.preco)}<br>
+ ${h?fd(h.data)+' '+h.hora.slice(0,5)+' • '+esc(h.profissionais?.nome):'sem horário'} <small>(${a.origem})</small><br>
+ <small>${esc(a.cliente_telefone)} ${esc(a.observacoes)}</small><br>
+ <select onchange="setSt('${a.id}','${a.horario_id}',this.value)">${['pendente','confirmado','concluido','cancelado'].map(s=>`<option ${s==a.status?'selected':''}>${s}</option>`).join('')}</select>
+ <a href="https://wa.me/55${tel}" target=_blank>WhatsApp</a></div>`}).join('')||'<p>Nada por aqui.</p>'}
+async function setSt(id,hid,s){await db.from('agendamentos').update({status:s}).eq('id',id);
+ if(hid&&hid!='null')await db.from('horarios').update({status:s=='cancelado'?'livre':'reservado'}).eq('id',hid);agenda()}
+
+// ---------- CRUD genérico (serviços / equipe) ----------
+const row=(t,o,f)=>`<div class=card data-t=${t} data-id="${o.id||''}">${f.map(k=>`<input data-f=${k} placeholder=${k} value="${esc(o[k])}" ${/preco|duracao/.test(k)?'type=number step=any':''}>`).join('')}<label><input type=checkbox data-f=ativo ${o.ativo!==false?'checked':''}> ativo</label> <button onclick=salvar(this)>Salvar</button>${o.id?`<button class=alt onclick=excluir(this)>Excluir</button>`:''}</div>`;
+async function salvar(b){const r=b.closest('.card'),p={};
+ r.querySelectorAll('[data-f]').forEach(i=>p[i.dataset.f]=i.type=='checkbox'?i.checked:i.type=='number'?(i.value===''?0:+i.value):i.value);
+ const q=db.from(r.dataset.t);const{error}=r.dataset.id?await q.update(p).eq('id',r.dataset.id):await q.insert(p);error?alert(error.message):go()}
+async function excluir(b){const r=b.closest('.card');if(!confirm('Excluir?'))return;const{error}=await db.from(r.dataset.t).delete().eq('id',r.dataset.id);error?alert(error.message):go()}
+async function servicos(){await load();const f=['nome','descricao','preco','duracao_min'];$('#c').innerHTML=`<h3>Serviços e valores</h3>`+D.sv.map(s=>row('servicos',s,f)).join('')+`<h4>Novo serviço</h4>`+row('servicos',{},f)}
+async function equipe(){await load();const f=['nome','especialidade'];$('#c').innerHTML=`<h3>Equipe</h3>`+D.pf.map(s=>row('profissionais',s,f)).join('')+`<h4>Nova profissional</h4>`+row('profissionais',{},f)}
+
+// ---------- HORÁRIOS ----------
+async function horarios(){await load();const hp=D.hp||D.pf[0]?.id;
+ $('#c').innerHTML=`<h3>Criar horários em lote</h3><div class=card><select id=gp>${opt(D.pf)}</select><br>De <input type=date id=d1> até <input type=date id=d2><br>Das <input type=time id=h1 value=09:00> às <input type=time id=h2 value=18:00> a cada <input type=number id=iv value=60 style="width:70px"> min<br><label><input type=checkbox id=dom checked> pular domingos</label> <button onclick=gerar()>Gerar</button></div>
+ <h3>Horários cadastrados</h3><select id=hp onchange="D.hp=this.value;horarios()">${opt(D.pf)}</select><div id=hl></div>`;
+ if(hp){$('#hp').value=hp;$('#gp').value=hp;
+  const{data}=await db.from('horarios').select('*').eq('profissional_id',hp).gte('data',new Date().toLocaleDateString('sv')).order('data').order('hora');
+  $('#hl').innerHTML=(data||[]).map(h=>`<div class=card>${fd(h.data)} ${h.hora.slice(0,5)} — <b>${h.status}</b> ${h.status!='reservado'?`<button class=alt onclick="tg('${h.id}','${h.status=='livre'?'bloqueado':'livre'}')">${h.status=='livre'?'Bloquear':'Liberar'}</button><button class=alt onclick="dl('${h.id}')">Excluir</button>`:''}</div>`).join('')}}
+async function gerar(){const p=$('#gp').value,a=$('#d1').value,b=$('#d2').value||a,iv=+$('#iv').value||60;if(!p||!a)return alert('Informe profissional e data.');
+ const[h1,m1]=$('#h1').value.split(':').map(Number),[h2,m2]=$('#h2').value.split(':').map(Number),rows=[];
+ for(let d=new Date(a+'T12:00');d<=new Date(b+'T12:00');d.setDate(d.getDate()+1)){
+  if($('#dom').checked&&d.getDay()==0)continue;
+  for(let m=h1*60+m1;m<h2*60+m2;m+=iv)rows.push({profissional_id:p,data:d.toLocaleDateString('sv'),hora:String(m/60|0).padStart(2,'0')+':'+String(m%60).padStart(2,'0')})}
+ const{error}=await db.from('horarios').upsert(rows,{onConflict:'profissional_id,data,hora',ignoreDuplicates:true});
+ error?alert(error.message):(D.hp=p,horarios())}
+async function tg(id,s){await db.from('horarios').update({status:s}).eq('id',id);horarios()}
+async function dl(id){await db.from('horarios').delete().eq('id',id);horarios()}
+
+// ---------- NOVO AGENDAMENTO MANUAL ----------
+async function novo(){await load();
+ $('#c').innerHTML=`<h3>Agendamento manual</h3><div class=card><select id=ns>${opt(D.sv)}</select><select id=np onchange=nh()><option value="">Profissional</option>${opt(D.pf)}</select><select id=nh><option value="">Horário (opcional)</option></select><br>
+ <input id=nn placeholder=Nome><input id=nt placeholder=Telefone><input id=no placeholder=Observações><br><button onclick=addMan()>Salvar</button></div>`}
+async function nh(){const p=$('#np').value;if(!p)return;
+ const{data}=await db.from('horarios').select('*').eq('profissional_id',p).eq('status','livre').gte('data',new Date().toLocaleDateString('sv')).order('data').order('hora');
+ $('#nh').innerHTML='<option value="">Horário (opcional)</option>'+(data||[]).map(h=>`<option value="${h.id}">${fd(h.data)} ${h.hora.slice(0,5)}</option>`).join('')}
+async function addMan(){const h=$('#nh').value||null;
+ const{error}=await db.from('agendamentos').insert({horario_id:h,servico_id:$('#ns').value,cliente_nome:$('#nn').value,cliente_telefone:$('#nt').value,observacoes:$('#no').value,status:'confirmado',origem:'manual'});
+ if(error)return alert(error.message);if(h)await db.from('horarios').update({status:'reservado'}).eq('id',h);alert('Salvo!');tab='agenda';go()}
+
+// ---------- CONFIG DO SITE ----------
+async function config(){const{data}=await db.from('configuracoes').select('*').eq('id',1).single();
+ const L={nome:'Nome da clínica',subtitulo:'Subtítulo',boas_vindas:'Texto de boas-vindas',whatsapp:'WhatsApp (só números, com 55)',endereco:'Endereço',aviso:'Aviso / política'};
+ $('#c').innerHTML=`<h3>Textos do site</h3><div class=card>`+Object.keys(L).map(k=>`<label>${L[k]}<br><input id=cf_${k} style="width:100%" value="${esc(data?.[k])}"></label><br>`).join('')+`<button onclick=salvaCfg()>Salvar</button></div>`}
+async function salvaCfg(){const p={};['nome','subtitulo','boas_vindas','whatsapp','endereco','aviso'].forEach(k=>p[k]=$('#cf_'+k).value);
+ const{error}=await db.from('configuracoes').update(p).eq('id',1);alert(error?error.message:'Salvo!')}
+</script></body></html>
