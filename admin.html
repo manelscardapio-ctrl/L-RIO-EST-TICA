@@ -1,14 +1,19 @@
 <!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex"><title>Admin — Lírio Estética</title>
-<style>
-body{font-family:system-ui,sans-serif;margin:0;background:#f4f1ef;color:#222}
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Jost:wght@300;400;500&display=swap" rel="stylesheet"><link rel="icon" href="logo.png"><style>:root{--cacau:#4a2a1c;--ouro:#b98f3e;--ouro2:#e3c77e;--rose:#f6e8e2;--bg:#fcf7f4;--ameixa:#7b4a5a;--tx:#3a2a24}*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:400 1rem/1.5 'Jost',system-ui,sans-serif}
 main{max-width:900px;margin:auto;padding:12px}
-.card{background:#fff;border:1px solid #ddd;border-radius:10px;padding:10px;margin:8px 0}
-button{padding:7px 12px;border:0;border-radius:8px;background:#7a4b5e;color:#fff;cursor:pointer;margin:2px}
-button.alt{background:#ddd;color:#222}
-input,select,textarea{padding:7px;margin:3px;box-sizing:border-box;max-width:100%}
-nav button.on{outline:2px solid #222}small{color:#666}
+.card{background:#fff;border:1px solid #efdfd7;border-radius:16px;padding:12px;margin:8px 0}
+h2,h3,h4{font-family:'Cormorant Garamond',serif;color:var(--cacau);font-weight:600}h3{font-size:1.6rem}
+nav{display:flex;flex-wrap:wrap;gap:2px;margin-bottom:8px}small{color:#85716a}a{color:var(--ameixa)}
+button{padding:10px 20px;border:1px solid var(--cacau);border-radius:999px;background:var(--cacau);color:#fff;cursor:pointer;margin:3px;font:500 .95rem 'Jost',sans-serif}
+button.alt{background:#fff;color:var(--cacau);border-color:var(--ouro2)}
+button.sel{background:var(--cacau);color:#fff;border-color:var(--cacau)}
+button:hover{border-color:var(--ouro)}
+:focus-visible{outline:2px solid var(--ouro);outline-offset:2px}
+input,textarea,select{padding:10px 14px;border:1px solid #e6d3ca;border-radius:12px;background:#fff;font:inherit;color:var(--tx);margin:4px 0}
+input:focus,textarea:focus,select:focus{outline:none;border-color:var(--ouro);box-shadow:0 0 0 3px rgba(185,143,62,.2)}
 </style></head><body><main id="app"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script>
@@ -24,9 +29,9 @@ const T={agenda,horarios,servicos,equipe,novo,config};
 const NAMES={agenda:'Agenda',horarios:'Horários',servicos:'Serviços',equipe:'Equipe',novo:'Novo agendamento',config:'Site'};
 
 (async()=>{const{data:{session}}=await db.auth.getSession();session?shell():login()})();
-function login(){A.innerHTML=`<div class=card><h2>Admin Lírio Estética</h2><input id=em placeholder=E-mail><input id=pw type=password placeholder=Senha><button onclick=entrar()>Entrar</button> <span id=msg></span></div>`}
+function login(){A.innerHTML=`<div class=card><img src=logo.png alt='' style='height:90px;border-radius:50%'><h2>Admin Lírio Estética</h2><input id=em placeholder=E-mail><input id=pw type=password placeholder=Senha><button onclick=entrar()>Entrar</button> <span id=msg></span></div>`}
 async function entrar(){const{error}=await db.auth.signInWithPassword({email:$('#em').value,password:$('#pw').value});error?$('#msg').textContent=error.message:shell()}
-function shell(){A.innerHTML=`<nav>${Object.keys(T).map(k=>`<button class="alt" onclick="tab='${k}';go()">${NAMES[k]}</button>`).join('')}<button onclick="db.auth.signOut().then(login)">Sair</button></nav><div id=c></div>`;go()}
+function shell(){A.innerHTML=`<img src=logo.png alt='' style='height:72px;border-radius:50%;display:block;margin:6px 0'><nav>${Object.keys(T).map(k=>`<button class="alt" onclick="tab='${k}';go()">${NAMES[k]}</button>`).join('')}<button onclick="db.auth.signOut().then(login)">Sair</button></nav><div id=c></div>`;go()}
 const go=()=>T[tab]();
 async function load(){D.sv=(await db.from('servicos').select('*').order('nome')).data||[];D.pf=(await db.from('profissionais').select('*').order('nome')).data||[]}
 
