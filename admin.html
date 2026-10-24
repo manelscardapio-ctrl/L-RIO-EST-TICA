@@ -20,6 +20,11 @@ input:focus,textarea:focus,select:focus{outline:none;border-color:var(--ouro);bo
 const SUPABASE_URL='https://rolktniycdayacfnolgs.supabase.co', SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJvbGt0bml5Y2RheWFjZm5vbGdzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI4NzYxOTYsImV4cCI6MjEwODQ1MjE5Nn0.VghfS6uowqYgvHSsuN9Cy6euxFTNqpwHgJpyfS0cE8A';
 const db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 const $=s=>document.querySelector(s), A=$('#app'), D={};
+const FOTO=p=>`${SUPABASE_URL}/storage/v1/object/public/fotos/${p}`;
+const add=(t,m)=>{const x=+t.slice(0,2)*60+ +t.slice(3,5)+m;return String(x/60|0).padStart(2,'0')+':'+String(x%60).padStart(2,'0')};
+// só mantém horários de início em que cabem os horários seguidos exigidos pela duração do serviço
+function inicios(l,dur){return l.filter((h,i)=>{let a=h.duracao_min,nx=add(h.hora,h.duracao_min);for(let j=i+1;a<dur;j++){const n=l[j];if(!n||n.data!=h.data||n.hora.slice(0,5)!=nx)return false;a+=n.duracao_min;nx=add(n.hora,n.duracao_min)}return true})}
+
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const brl=v=>Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
 const fd=d=>new Date(d+'T12:00').toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit'});
@@ -45,19 +50,46 @@ async function agenda(){
  l.map(a=>{const h=a.horarios,tel=a.cliente_telefone.replace(/\D/g,'');return `<div class=card><b>${esc(a.cliente_nome)}</b> — ${esc(a.servicos?.nome||'?')} ${brl(a.servicos?.preco)}<br>
  ${h?fd(h.data)+' '+h.hora.slice(0,5)+' • '+esc(h.profissionais?.nome):'sem horário'} <small>(${a.origem})</small><br>
  <small>${esc(a.cliente_telefone)} ${esc(a.observacoes)}</small><br>
- <select onchange="setSt('${a.id}','${a.horario_id}',this.value)">${['pendente','confirmado','concluido','cancelado'].map(s=>`<option ${s==a.status?'selected':''}>${s}</option>`).join('')}</select>
+ <select onchange="setSt('${a.id}',this.value)">${['pendente','confirmado','concluido','cancelado'].map(s=>`<option ${s==a.status?'selected':''}>${s}</option>`).join('')}</select>
  <a href="https://wa.me/55${tel}" target=_blank>WhatsApp</a></div>`}).join('')||'<p>Nada por aqui.</p>'}
-async function setSt(id,hid,s){await db.from('agendamentos').update({status:s}).eq('id',id);
- if(hid&&hid!='null')await db.from('horarios').update({status:s=='cancelado'?'livre':'reservado'}).eq('id',hid);agenda()}
+async function setSt(id,s){const{data:a}=await db.from('agendamentos').select('horario_id,horarios_ids').eq('id',id).single();
+ await db.from('agendamentos').update({status:s}).eq('id',id);
+ const ids=(a.horarios_ids?.length?a.horarios_ids:[a.horario_id]).filter(Boolean);
+ if(ids.length)await db.from('horarios').update({status:s=='cancelado'?'livre':'reservado'}).in('id',ids);agenda()}
 
 // ---------- CRUD genérico (serviços / equipe) ----------
-const row=(t,o,f)=>`<div class=card data-t=${t} data-id="${o.id||''}">${f.map(k=>`<input data-f=${k} placeholder=${k} value="${esc(o[k])}" ${/preco|duracao/.test(k)?'type=number step=any':''}>`).join('')}<label><input type=checkbox data-f=ativo ${o.ativo!==false?'checked':''}> ativo</label> <button onclick=salvar(this)>Salvar</button>${o.id?`<button class=alt onclick=excluir(this)>Excluir</button>`:''}</div>`;
+const row=(t,o,f,x='')=>`<div class=card data-t=${t} data-id="${o.id||''}" data-foto="${o.foto_path||''}">${f.map(k=>`<input data-f=${k} placeholder=${k} value="${esc(o[k])}" ${/preco|duracao|ordem/.test(k)?'type=number step=any':''}>`).join('')}${x}<label><input type=checkbox data-f=ativo ${o.ativo!==false?'checked':''}> ativo</label> <button onclick=salvar(this)>Salvar</button>${o.id?`<button class=alt onclick=excluir(this)>Excluir</button>`:''}</div>`;
 async function salvar(b){const r=b.closest('.card'),p={};
- r.querySelectorAll('[data-f]').forEach(i=>p[i.dataset.f]=i.type=='checkbox'?i.checked:i.type=='number'?(i.value===''?0:+i.value):i.value);
+ r.querySelectorAll('[data-f]').forEach(i=>p[i.dataset.f]=i.type=='checkbox'?i.checked:i.type=='number'?(i.value===''?0:+i.value):(i.value===''&&/_id$/.test(i.dataset.f)?null:i.value));
  const q=db.from(r.dataset.t);const{error}=r.dataset.id?await q.update(p).eq('id',r.dataset.id):await q.insert(p);error?alert(error.message):go()}
-async function excluir(b){const r=b.closest('.card');if(!confirm('Excluir?'))return;const{error}=await db.from(r.dataset.t).delete().eq('id',r.dataset.id);error?alert(error.message):go()}
-async function servicos(){await load();const f=['nome','descricao','preco','duracao_min'];$('#c').innerHTML=`<h3>Serviços e valores</h3>`+D.sv.map(s=>row('servicos',s,f)).join('')+`<h4>Novo serviço</h4>`+row('servicos',{},f)}
-async function equipe(){await load();const f=['nome','especialidade'];$('#c').innerHTML=`<h3>Equipe</h3>`+D.pf.map(s=>row('profissionais',s,f)).join('')+`<h4>Nova profissional</h4>`+row('profissionais',{},f)}
+async function excluir(b){const r=b.closest('.card');if(!confirm('Excluir?'))return;if(r.dataset.foto)await db.storage.from('fotos').remove([r.dataset.foto]);const{error}=await db.from(r.dataset.t).delete().eq('id',r.dataset.id);error?alert(error.message):go()}
+async function servicos(){await load();D.ct=(await db.from('categorias').select('*').order('ordem').order('nome')).data||[];
+ const f=['nome','descricao','preco','duracao_min'];
+ const x=o=>`<select data-f=categoria_id><option value="">Sem categoria</option>${D.ct.map(c=>`<option value="${c.id}" ${c.id==o.categoria_id?'selected':''}>${esc(c.nome)}</option>`).join('')}</select><input data-f=etiqueta placeholder="etiqueta (ex.: mais pedido)" value="${esc(o.etiqueta)}">`+
+  (o.id?`<div><small>Foto (reduzida sozinha para ~120 KB):</small> ${o.foto_path?`<img src="${FOTO(o.foto_path)}" height=56 style="border-radius:10px;vertical-align:middle"> <button class=alt onclick="tiraFoto('${o.id}')">Remover foto</button>`:''}<input type=file accept="image/*" onchange="foto('${o.id}',this)"></div>`:'<div><small>Salve o serviço para poder adicionar a foto.</small></div>');
+ $('#c').innerHTML=`<h3>Categorias</h3>`+D.ct.map(c=>row('categorias',c,['nome','ordem'])).join('')+row('categorias',{},['nome','ordem'])+
+ `<h3>Serviços e valores</h3>`+D.sv.map(s=>row('servicos',s,f,x(s))).join('')+`<h4>Novo serviço</h4>`+row('servicos',{},f,x({}))}
+async function equipe(){await load();D.ps=(await db.from('profissional_servicos').select('*')).data||[];const f=['nome','especialidade'];
+ $('#c').innerHTML=`<h3>Equipe</h3>`+D.pf.map(s=>row('profissionais',s,f)).join('')+`<h4>Nova profissional</h4>`+row('profissionais',{},f)+
+ `<h3>Quem faz o quê</h3><small>Sem nenhum serviço marcado, a profissional aparece para todos os serviços.</small>`+
+ D.pf.map(p=>`<div class=card><b>${esc(p.nome)}</b><br>${D.sv.map(s=>`<label style="margin-right:12px"><input type=checkbox ${D.ps.some(x=>x.profissional_id==p.id&&x.servico_id==s.id)?'checked':''} onchange="mapPs('${p.id}','${s.id}',this.checked)"> ${esc(s.nome)}</label>`).join('')}</div>`).join('')}
+async function mapPs(p,s,on){const q=db.from('profissional_servicos');const{error}=on?await q.insert({profissional_id:p,servico_id:s}):await q.delete().eq('profissional_id',p).eq('servico_id',s);if(error)alert(error.message)}
+// ---- fotos: reduz no navegador (máx. 800px, ≤120 KB, webp) antes de enviar ----
+const toBlob=(c,t,q)=>new Promise(r=>c.toBlob(r,t,q));
+async function comprimir(file){const bmp=await createImageBitmap(file);
+ for(const m of [800,600,480]){const k=Math.min(1,m/Math.max(bmp.width,bmp.height)),c=document.createElement('canvas');
+  c.width=Math.round(bmp.width*k);c.height=Math.round(bmp.height*k);c.getContext('2d').drawImage(bmp,0,0,c.width,c.height);
+  for(let q=.8;q>=.4;q-=.1){let b=await toBlob(c,'image/webp',q);if(!b||b.type!='image/webp')b=await toBlob(c,'image/jpeg',q);if(b&&b.size<=122880)return b}}
+ return null}
+async function foto(id,inp){const f=inp.files[0];if(!f)return;if(f.size>15e6)return alert('Imagem muito grande (máx. 15 MB).');
+ let b;try{b=await comprimir(f)}catch(e){return alert('Arquivo de imagem inválido.')}
+ if(!b)return alert('Não consegui reduzir esta foto. Tente outra.');
+ const s=D.sv.find(x=>x.id==id),path=`servicos/${id}-${Date.now()}.${b.type=='image/webp'?'webp':'jpg'}`;
+ const{error}=await db.storage.from('fotos').upload(path,b,{contentType:b.type,cacheControl:'31536000'});if(error)return alert(error.message);
+ if(s.foto_path)await db.storage.from('fotos').remove([s.foto_path]);
+ await db.from('servicos').update({foto_path:path}).eq('id',id);servicos()}
+async function tiraFoto(id){const s=D.sv.find(x=>x.id==id);if(!s.foto_path||!confirm('Remover a foto?'))return;
+ await db.storage.from('fotos').remove([s.foto_path]);await db.from('servicos').update({foto_path:null}).eq('id',id);servicos()}
 
 // ---------- HORÁRIOS ----------
 async function horarios(){await load();const hp=D.hp||D.pf[0]?.id;
@@ -70,7 +102,7 @@ async function gerar(){const p=$('#gp').value,a=$('#d1').value,b=$('#d2').value|
  const[h1,m1]=$('#h1').value.split(':').map(Number),[h2,m2]=$('#h2').value.split(':').map(Number),rows=[];
  for(let d=new Date(a+'T12:00');d<=new Date(b+'T12:00');d.setDate(d.getDate()+1)){
   if($('#dom').checked&&d.getDay()==0)continue;
-  for(let m=h1*60+m1;m<h2*60+m2;m+=iv)rows.push({profissional_id:p,data:d.toLocaleDateString('sv'),hora:String(m/60|0).padStart(2,'0')+':'+String(m%60).padStart(2,'0')})}
+  for(let m=h1*60+m1;m<h2*60+m2;m+=iv)rows.push({profissional_id:p,duracao_min:iv,data:d.toLocaleDateString('sv'),hora:String(m/60|0).padStart(2,'0')+':'+String(m%60).padStart(2,'0')})}
  const{error}=await db.from('horarios').upsert(rows,{onConflict:'profissional_id,data,hora',ignoreDuplicates:true});
  error?alert(error.message):(D.hp=p,horarios())}
 async function tg(id,s){await db.from('horarios').update({status:s}).eq('id',id);horarios()}
@@ -78,14 +110,15 @@ async function dl(id){await db.from('horarios').delete().eq('id',id);horarios()}
 
 // ---------- NOVO AGENDAMENTO MANUAL ----------
 async function novo(){await load();
- $('#c').innerHTML=`<h3>Agendamento manual</h3><div class=card><select id=ns>${opt(D.sv)}</select><select id=np onchange=nh()><option value="">Profissional</option>${opt(D.pf)}</select><select id=nh><option value="">Horário (opcional)</option></select><br>
+ $('#c').innerHTML=`<h3>Agendamento manual</h3><div class=card><select id=ns onchange=nh()>${opt(D.sv)}</select><select id=np onchange=nh()><option value="">Profissional</option>${opt(D.pf)}</select><select id=nh><option value="">Horário (opcional)</option></select><br>
  <input id=nn placeholder=Nome><input id=nt placeholder=Telefone><input id=no placeholder=Observações><br><button onclick=addMan()>Salvar</button></div>`}
-async function nh(){const p=$('#np').value;if(!p)return;
+async function nh(){const p=$('#np').value;if(!p)return;const dur=D.sv.find(x=>x.id==$('#ns').value)?.duracao_min||60;
  const{data}=await db.from('horarios').select('*').eq('profissional_id',p).eq('status','livre').gte('data',new Date().toLocaleDateString('sv')).order('data').order('hora');
- $('#nh').innerHTML='<option value="">Horário (opcional)</option>'+(data||[]).map(h=>`<option value="${h.id}">${fd(h.data)} ${h.hora.slice(0,5)}</option>`).join('')}
-async function addMan(){const h=$('#nh').value||null;
- const{error}=await db.from('agendamentos').insert({horario_id:h,servico_id:$('#ns').value,cliente_nome:$('#nn').value,cliente_telefone:$('#nt').value,observacoes:$('#no').value,status:'confirmado',origem:'manual'});
- if(error)return alert(error.message);if(h)await db.from('horarios').update({status:'reservado'}).eq('id',h);alert('Salvo!');tab='agenda';go()}
+ $('#nh').innerHTML='<option value="">Sem horário (opcional)</option>'+inicios(data||[],dur).map(h=>`<option value="${h.id}">${fd(h.data)} ${h.hora.slice(0,5)}</option>`).join('')}
+async function addMan(){const h=$('#nh').value||null,b={p_servico:$('#ns').value,p_nome:$('#nn').value,p_tel:$('#nt').value,p_obs:$('#no').value};
+ const r=h?await db.rpc('agendar',{...b,p_horario:h,p_origem:'manual',p_status:'confirmado'}):
+  await db.from('agendamentos').insert({servico_id:b.p_servico,cliente_nome:b.p_nome,cliente_telefone:b.p_tel,observacoes:b.p_obs,status:'confirmado',origem:'manual'});
+ if(r.error)return alert(r.error.message);alert('Salvo!');tab='agenda';go()}
 
 // ---------- CONFIG DO SITE ----------
 async function config(){const{data}=await db.from('configuracoes').select('*').eq('id',1).single();
