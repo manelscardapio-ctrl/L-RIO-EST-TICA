@@ -28,10 +28,13 @@ small{color:#85716a}
 input,textarea{width:100%}
 #ok{background:#fff;border:1px solid var(--ouro2);border-radius:18px;padding:22px;text-align:center}
 #info{text-align:center;margin-top:36px}
+.srv img{width:84px;height:84px;object-fit:cover;border-radius:14px;flex:none;background:var(--rose)}
+.tag{font:500 .75rem Jost,sans-serif;background:var(--rose);color:var(--ameixa);padding:2px 9px;border-radius:999px;vertical-align:middle}
+#ct{display:flex;flex-wrap:wrap;margin-bottom:6px}
 @media(prefers-reduced-motion:no-preference){header img{animation:f .8s ease both}@keyframes f{from{opacity:0;transform:scale(.96)}}}
 </style></head><body><main>
 <header><img src="logo.png" alt="Lírio Estética Avançada"><h1 id="nome" class="sr">Lírio Estética</h1><p id="sub"></p><p id="boas"></p></header><hr>
-<h2>1. Serviço</h2><div id="sv">Carregando...</div>
+<h2>1. Serviço</h2><div id="ct"></div><div id="sv">Carregando...</div>
 <div id="s2" hidden><h2>2. Profissional</h2><div id="pf"></div></div>
 <div id="s3" hidden><h2>3. Data e horário</h2><div id="dt"></div><div id="hr"></div></div>
 <div id="s4" hidden><h2>4. Seus dados</h2>
@@ -42,6 +45,70 @@ input,textarea{width:100%}
 <p><small id="info"></small></p>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script>
+const SUPABASE_URL='https://rolktniycdayacfnolgs.supabase.co', SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJvbGt0bml5Y2RheWFjZm5vbGdzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI4NzYxOTYsImV4cCI6MjEwODQ1MjE5Nn0.VghfS6uowqYgvHSsuN9Cy6euxFTNqpwHgJpyfS0cE8A';
+const db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+const $=i=>document.getElementById(i), S={}, H=[];
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const brl=v=>Number(v).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+const show=i=>$(i).hidden=false;
+const sel=(box,el)=>{[...$(box).children].forEach(c=>c.classList.remove('sel'));el.classList.add('sel')};
+
+const FOTO=p=>`${SUPABASE_URL}/storage/v1/object/public/fotos/${p}`;
+const add=(t,m)=>{const x=+t.slice(0,2)*60+ +t.slice(3,5)+m;return String(x/60|0).padStart(2,'0')+':'+String(x%60).padStart(2,'0')};
+// só mantém horários de início em que cabem os horários seguidos exigidos pela duração do serviço
+function inicios(l,dur){return l.filter((h,i)=>{let a=h.duracao_min,nx=add(h.hora,h.duracao_min);for(let j=i+1;a<dur;j++){const n=l[j];if(!n||n.data!=h.data||n.hora.slice(0,5)!=nx)return false;a+=n.duracao_min;nx=add(n.hora,n.duracao_min)}return true})}
+async function init(){
+ const [c,sv,pf,ct,ps]=await Promise.all([
+  db.from('configuracoes').select('*').eq('id',1).single(),
+  db.from('servicos').select('*').eq('ativo',true).order('nome'),
+  db.from('profissionais').select('*').eq('ativo',true).order('nome'),
+  db.from('categorias').select('*').eq('ativo',true).order('ordem').order('nome'),
+  db.from('profissional_servicos').select('*')]);
+ const k=c.data||{}; S.cfg=k;
+ document.title=k.nome||'Lírio Estética';
+ $('nome').textContent=k.nome||''; $('sub').textContent=k.subtitulo||''; $('boas').textContent=k.boas_vindas||'';
+ $('info').textContent=[k.endereco,k.aviso].filter(Boolean).join(' • ');
+ S.pf=pf.data||[];S.all=sv.data||[];S.ct=ct.data||[];S.ps=ps.data||[];
+ const sem=s=>!s.categoria_id||!S.ct.some(c=>c.id==s.categoria_id);
+ S.sem=sem;
+ const L=S.ct.filter(c=>S.all.some(s=>s.categoria_id==c.id)).map(c=>({id:c.id,nome:c.nome}));
+ if(L.length&&S.all.some(sem))L.push({id:'_',nome:'Outros'});
+ $('ct').innerHTML=L.length>1?L.map((c,i)=>`<button class="alt${i?'':' sel'}" onclick="pickCt('${c.id}',this)">${esc(c.nome)}</button>`).join(''):'';
+ pickCt(L.length>1?L[0].id:null);
+}
+// fotos só são carregadas para a categoria aberta (loading=lazy) — economiza banda do Supabase
+function pickCt(id,el){if(el)sel('ct',el);
+ const l=S.all.filter(s=>id===null||(id=='_'?S.sem(s):s.categoria_id==id));
+ $('sv').innerHTML=l.map(s=>`<div class="srv" onclick="pickSv('${s.id}',this)">${s.foto_path?`<img src="${FOTO(s.foto_path)}" alt="" loading="lazy" decoding="async" width="84" height="84">`:''}
+  <div><b>${esc(s.nome)}</b>${s.etiqueta?` <span class="tag">${esc(s.etiqueta)}</span>`:''}<br><small>${esc(s.descricao)} ${s.duracao_min?'• '+s.duracao_min+' min':''}</small></div>
+  <span class="dots"></span><span class="p">${brl(s.preco)}</span></div>`).join('')||'Nenhum serviço disponível.';}
+function pickSv(id,el){S.sv=S.all.find(s=>s.id==id);S.pid=S.hid=null;sel('sv',el);
+ ['s3','s4'].forEach(i=>$(i).hidden=true);
+ const ok=p=>!S.ps.some(x=>x.profissional_id==p.id)||S.ps.some(x=>x.profissional_id==p.id&&x.servico_id==id);
+ $('pf').innerHTML=S.pf.filter(ok).map(p=>`<button class="alt" onclick="pickPf('${p.id}',this)">${esc(p.nome)}${p.especialidade?' <small>('+esc(p.especialidade)+')</small>':''}</button>`).join('')||'Nenhuma profissional disponível para este serviço.';
+ show('s2');}
+async function pickPf(id,el){S.pid=id;S.hid=null;sel('pf',el);
+ const hoje=new Date().toLocaleDateString('sv'),agora=new Date().toTimeString().slice(0,5);
+ const {data}=await db.from('horarios').select('*').eq('profissional_id',id).eq('status','livre').gte('data',hoje).order('data').order('hora');
+ const l=(data||[]).filter(h=>h.data>hoje||h.hora.slice(0,5)>agora);
+ H.length=0;H.push(...inicios(l,S.sv.duracao_min||60));
+ const dias=[...new Set(H.map(h=>h.data))];
+ $('dt').innerHTML=dias.map(d=>`<button class="alt" onclick="pickDia('${d}',this)">${new Date(d+'T12:00').toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit'})}</button>`).join('')||'Sem horários livres no momento.';
+ $('hr').innerHTML='';$('s4').hidden=true;show('s3');}
+function pickDia(d,el){sel('dt',el);S.hid=null;$('s4').hidden=true;
+ $('hr').innerHTML=H.filter(h=>h.data==d).map(h=>`<button class="alt" onclick="pickHr('${h.id}',this)">${h.hora.slice(0,5)}</button>`).join('');}
+function pickHr(id,el){S.hid=id;sel('hr',el);show('s4');}
+async function enviar(){
+ if(!S.sv||!S.hid)return alert('Escolha serviço e horário.');
+ const {error}=await db.rpc('agendar',{p_horario:S.hid,p_servico:S.sv.id,p_nome:$('n').value,p_tel:$('t').value,p_obs:$('o').value});
+ if(error)return alert(error.message.includes('indispon')?'Esse horário acabou de ser reservado. Escolha outro.':'Erro: '+error.message);
+ ['s2','s3','s4'].forEach(i=>$(i).hidden=true);
+ const w=(S.cfg.whatsapp||'').replace(/\D/g,'');
+ $('ok').innerHTML=`<b>Agendamento solicitado!</b><br>Aguarde a confirmação da clínica.`+(w?`<br><a href="https://wa.me/${w}">Falar no WhatsApp</a>`:'');
+ show('ok');}
+init();
+</script>
 <script>
 const SUPABASE_URL='https://rolktniycdayacfnolgs.supabase.co', SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJvbGt0bml5Y2RheWFjZm5vbGdzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI4NzYxOTYsImV4cCI6MjEwODQ1MjE5Nn0.VghfS6uowqYgvHSsuN9Cy6euxFTNqpwHgJpyfS0cE8A';
 const db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
